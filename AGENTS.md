@@ -31,7 +31,7 @@ markdownlint -c .markdownlint.jsonc .
 
 ```bash
 # Start VM
-limactl start --name=copyfail --mount-none ./copy_fail.yml
+limactl start --name=copyfail --mount-none --tty=false ./copy_fail.yml
 
 # Provision vulnerable kernel (reboots VM)
 limactl shell --sync . copyfail sudo bash provision.sh
@@ -43,7 +43,7 @@ limactl shell --sync . copyfail sudo bash verify.sh
 limactl shell copyfail -- su -s /bin/bash nobody -c "python3 /usr/local/bin/copy_fail.py --target /usr/bin/su"
 
 # Teardown
-limactl stop copyfail && limactl delete copyfail
+limactl stop -f copyfail && limactl delete copyfail
 ```
 
 ## Architecture
@@ -75,7 +75,7 @@ limactl stop copyfail && limactl delete copyfail
 - Guest: x86_64 Debian 12 bookworm (`genericcloud-amd64`)
 - Vulnerable kernel: `6.1.0-43-cloud-amd64` (package `6.1.162-1`)
 - Patched kernel: `6.1.170-1` or later
-- Lima `vmType: vz` with Rosetta — works on Apple Silicon without manual cross-compilation
+- Lima `vmType: qemu`, `arch: x86_64` — QEMU emulates x86_64 on Apple Silicon; `lima-additional-guestagents` provides the x86_64 guest agent
 - `provision.sh` rewrites `/etc/apt/sources.list.d/debian.sources` to `snapshot.debian.org` (snapshot date `20260221T204712Z`) and sets `Acquire::Check-Valid-Until false`
 
 ## Mitigation Verification
@@ -128,3 +128,11 @@ s.close()
 | `blocked — [Errno 2] No such file or directory` | Mitigated — patched kernel or `install algif_aead /bin/false` active |
 | `blocked — [Errno 1] Operation not permitted` | Module present but load blocked by modprobe rule |
 | `bind succeeded` | **Vulnerable** — apply workaround or reboot into patched kernel |
+
+## Context7
+
+Always use Context7 MCP when I need library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.
+
+### Libraries
+
+- lima-vm/lima

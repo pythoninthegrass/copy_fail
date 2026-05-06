@@ -3,7 +3,7 @@
 # then runs the exploit non-interactively.
 #
 # Usage (run from the repo directory):
-#   limactl start --name=copyfail --mount-none ./copy_fail.yml
+#   limactl start --name=copyfail --mount-none --tty=false ./copy_fail.yml
 #   limactl shell --sync . copyfail sudo bash provision.sh
 #   limactl shell --sync . copyfail sudo bash verify.sh
 
@@ -20,14 +20,8 @@ cpus: 2
 memory: 2GiB
 disk: 20GiB
 
-vmType: vz
-rosetta:
-  enabled: true
-  binfmt: true
-
-networks:
-  - lima: shared
-    interface: en0
+vmType: qemu
+arch: x86_64
 
 hostResolver:
   hosts:

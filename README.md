@@ -18,8 +18,9 @@ without triggering copy-on-write, then exec it to gain root.
 | lima-additional-guestagents | required for x86_64 guest on Apple Silicon |
 | Python | 3.9+ (host, for any local tooling) |
 
-The VM itself is x86_64 Debian 12 bookworm. Rosetta 2 handles the
-architecture translation on Apple Silicon — no manual cross-compilation needed.
+The VM is x86_64 Debian 12 bookworm running under QEMU (`vmType: qemu`, `arch:
+x86_64`). On Apple Silicon, QEMU emulates x86_64 hardware; `lima-additional-guestagents`
+provides the matching Lima guest agent binary.
 
 ---
 
@@ -33,19 +34,16 @@ brew install lima lima-additional-guestagents
 git clone https://github.com/yourorg/copy_fail ~/git/copy_fail
 cd ~/git/copy_fail
 
-# 3. Copy scripts to the Lima shared tmp directory
-mkdir -p /tmp/lima
-cp provision.sh verify.sh copy_fail.py /tmp/lima/
+# 3. Start the VM (--mount-none keeps host filesystem out of the guest)
+limactl start --name=copyfail --mount-none --tty=false copy_fail.yml
 
-# 4. Start the VM
-limactl start --name=copyfail copy_fail.yml
-
-# 5. Provision: install vulnerable kernel (6.1.162-1) and reboot
-limactl shell copyfail sudo bash /usr/local/bin/provision.sh
+# 4. Provision: install vulnerable kernel (6.1.162-1) and reboot
+#    --sync . makes the repo directory available inside the VM
+limactl shell --sync . copyfail sudo bash provision.sh
 # VM reboots automatically. Wait ~30 seconds.
 
-# 6. Verify: confirm vulnerable kernel, run exploit, check page cache
-limactl shell copyfail sudo bash /usr/local/bin/verify.sh
+# 5. Verify: confirm vulnerable kernel, run exploit, check page cache
+limactl shell --sync . copyfail sudo bash verify.sh
 ```
 
 Expected output from `verify.sh`:
@@ -79,11 +77,13 @@ limactl delete copyfail
 
 ```sh
 # Check Lima logs
-limactl start --name=copyfail copy_fail.yml 2>&1 | tail -40
+limactl start --name=copyfail --mount-none copy_fail.yml 2>&1 | tail -40
 
 # If you see "additional guest agents required":
 brew install lima-additional-guestagents
 ```
+
+`socket_vmnet` is not required — the VM uses QEMU's built-in user-mode networking.
 
 ### Stuck after provision.sh reboot
 
@@ -107,8 +107,8 @@ limactl list
 limactl shell copyfail -- bash -c 'grep GRUB_DEFAULT /etc/default/grub'
 # Should show the 6.1.0-43 entry.
 
-# If not, re-run provision.sh:
-limactl shell copyfail sudo bash /usr/local/bin/provision.sh
+# If not, re-run provision.sh (from the repo root):
+limactl shell --sync . copyfail sudo bash provision.sh
 ```
 
 ### apt sources broken inside VM
@@ -160,8 +160,8 @@ update-grub
 # Edit /etc/default/grub to set GRUB_DEFAULT to the 6.1.0-45 entry
 reboot
 
-# After reboot:
-sudo bash /usr/local/bin/verify.sh
+# After reboot (from repo root on the host):
+limactl shell --sync . copyfail sudo bash verify.sh
 # Expect [FAIL] on the page cache check — ELF magic should remain 7f454c46
 ```
 
