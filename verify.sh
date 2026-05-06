@@ -6,7 +6,7 @@ verify.sh — run inside the Lima VM as root after provision.sh + reboot
 Checks:
 	1. Confirms we are on the vulnerable kernel (6.1.162-1).
 	2. Confirms algif_aead is loadable (not blocked by modprobe).
-	3. Runs copyfail.py as an unprivileged user.
+	3. Runs copy_fail.py as an unprivileged user.
 	4. Reports whether the page cache overwrite succeeded.
 	5. Confirms the patched kernel (6.1.170-1) blocks the attack.
 EOF
@@ -60,9 +60,9 @@ with open('/usr/bin/su','rb') as f:
 ")
 info "Magic before: ${MAGIC_BEFORE}"
 
-EXPLOIT_BIN="/usr/local/bin/copyfail.py"
+EXPLOIT_BIN="/usr/local/bin/copy_fail.py"
 if [[ ! -f "${EXPLOIT_BIN}" ]]; then
-    EXPLOIT_BIN="$(dirname "$0")/copyfail.py"
+    EXPLOIT_BIN="$(dirname "$0")/copy_fail.py"
 fi
 
 info "Running exploit as ${EXPLOIT_USER}..."

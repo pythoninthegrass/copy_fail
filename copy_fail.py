@@ -20,7 +20,7 @@ Non-interactive: the shellcode payload just writes a SUID shell to
 /tmp/sh and exits, so no TTY is needed.
 
 Usage (must run as unprivileged user inside the VM):
-  python3 copyfail.py [--target /usr/bin/su] [--payload /tmp/sh]
+  python3 copy_fail.py [--target /usr/bin/su] [--payload /tmp/sh]
 
 References:
   https://copy.fail

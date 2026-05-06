@@ -35,10 +35,10 @@ cd ~/git/copy_fail
 
 # 3. Copy scripts to the Lima shared tmp directory
 mkdir -p /tmp/lima
-cp provision.sh verify.sh copyfail.py /tmp/lima/
+cp provision.sh verify.sh copy_fail.py /tmp/lima/
 
 # 4. Start the VM
-limactl start --name=copyfail copyfail.yaml
+limactl start --name=copyfail copy_fail.yml
 
 # 5. Provision: install vulnerable kernel (6.1.162-1) and reboot
 limactl shell copyfail sudo bash /usr/local/bin/provision.sh
@@ -79,7 +79,7 @@ limactl delete copyfail
 
 ```sh
 # Check Lima logs
-limactl start --name=copyfail copyfail.yaml 2>&1 | tail -40
+limactl start --name=copyfail copy_fail.yml 2>&1 | tail -40
 
 # If you see "additional guest agents required":
 brew install lima-additional-guestagents
@@ -135,7 +135,7 @@ This is expected if:
 - The `su` binary layout differs from what the shellcode targets. The PoC
   writes to page offset 0; if the ELF entry point is elsewhere the exec
   will segfault rather than spawn a shell. Adjust `STUB_ELF` in
-  `copyfail.py` for your binary.
+  `copy_fail.py` for your binary.
 - `algif_aead` is blocked by a `modprobe.d` rule. Check:
   ```sh
   cat /etc/modprobe.d/*.conf | grep algif
@@ -145,10 +145,10 @@ This is expected if:
 
 ```sh
 # Inside the VM as an unprivileged user:
-python3 /usr/local/bin/copyfail.py --target /usr/bin/su
+python3 /usr/local/bin/copy_fail.py --target /usr/bin/su
 
 # As root (skips the interesting LPE path but still tests the mechanism):
-sudo python3 /usr/local/bin/copyfail.py --target /usr/bin/su
+sudo python3 /usr/local/bin/copy_fail.py --target /usr/bin/su
 ```
 
 ### Confirming the patch blocks the attack
@@ -171,10 +171,10 @@ sudo bash /usr/local/bin/verify.sh
 
 | File | Purpose |
 |---|---|
-| `copyfail.yaml` | Lima VM definition |
+| `copy_fail.yml` | Lima VM definition |
 | `provision.sh` | Installs vulnerable kernel, configures GRUB, reboots |
 | `verify.sh` | Confirms kernel, runs exploit, checks result, restores su |
-| `copyfail.py` | Non-interactive PoC (runs as unprivileged user) |
+| `copy_fail.py` | Non-interactive PoC (runs as unprivileged user) |
 
 ---
 

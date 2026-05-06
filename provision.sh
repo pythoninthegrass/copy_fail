@@ -82,8 +82,8 @@ sed -i 's|^GRUB_TIMEOUT=.*|GRUB_TIMEOUT=0|' /etc/default/grub
 update-grub
 
 echo "[provision] Staging exploit"
-cp /tmp/lima/copyfail.py /usr/local/bin/copyfail.py 2>/dev/null || \
-    cp "$(dirname "$0")/copyfail.py" /usr/local/bin/copyfail.py 2>/dev/null || true
+cp /tmp/lima/copy_fail.py /usr/local/bin/copy_fail.py 2>/dev/null || \
+    cp "$(dirname "$0")/copy_fail.py" /usr/local/bin/copy_fail.py 2>/dev/null || true
 
 echo "[provision] Rebooting into ${VULN_KERNEL} in 3 seconds..."
 echo "            After reboot, run: limactl shell copyfail sudo bash /usr/local/bin/verify.sh"

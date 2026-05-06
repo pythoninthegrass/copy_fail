@@ -25,7 +25,7 @@ ruff check .
 
 ```bash
 # Start VM
-limactl start --name=copyfail --mount-none ./copyfail.yml
+limactl start --name=copyfail --mount-none ./copy_fail.yml
 
 # Provision vulnerable kernel (reboots VM)
 limactl shell --sync . copyfail sudo bash provision.sh
@@ -34,7 +34,7 @@ limactl shell --sync . copyfail sudo bash provision.sh
 limactl shell --sync . copyfail sudo bash verify.sh
 
 # Run exploit standalone inside VM (as unprivileged user)
-limactl shell copyfail -- su -s /bin/bash nobody -c "python3 /usr/local/bin/copyfail.py --target /usr/bin/su"
+limactl shell copyfail -- su -s /bin/bash nobody -c "python3 /usr/local/bin/copy_fail.py --target /usr/bin/su"
 
 # Teardown
 limactl stop copyfail && limactl delete copyfail
@@ -46,12 +46,12 @@ limactl stop copyfail && limactl delete copyfail
 
 | File | Role |
 |---|---|
-| `copyfail.py` | Python PoC — opens AF_ALG socket, mmaps target SUID binary, uses `splice()` to trigger in-place page cache write |
+| `copy_fail.py` | Python PoC — opens AF_ALG socket, mmaps target SUID binary, uses `splice()` to trigger in-place page cache write |
 | `provision.sh` | Pins apt to `snapshot.debian.org`, installs `linux-image-6.1.0-43-cloud-amd64` (6.1.162-1), configures GRUB, reboots |
 | `verify.sh` | Checks kernel version, confirms `algif_aead` loadability, runs exploit as `nobody`, checks ELF magic change, restores `su` |
-| `copyfail.yml` | Lima VM definition: x86_64 Debian 12 bookworm, 2 CPUs/2 GiB RAM, Rosetta enabled for Apple Silicon |
+| `copy_fail.yml` | Lima VM definition: x86_64 Debian 12 bookworm, 2 CPUs/2 GiB RAM, Rosetta enabled for Apple Silicon |
 
-### Exploit Mechanism (`copyfail.py`)
+### Exploit Mechanism (`copy_fail.py`)
 
 1. Opens target SUID binary (`/usr/bin/su`) read-only to populate page cache
 2. `mmap`s first page of the target (`MAP_SHARED`)

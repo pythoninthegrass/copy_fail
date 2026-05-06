@@ -3,7 +3,7 @@
 # then runs the exploit non-interactively.
 #
 # Usage (run from the repo directory):
-#   limactl start --name=copyfail --mount-none ./copyfail.yml
+#   limactl start --name=copyfail --mount-none ./copy_fail.yml
 #   limactl shell --sync . copyfail sudo bash provision.sh
 #   limactl shell --sync . copyfail sudo bash verify.sh
 
