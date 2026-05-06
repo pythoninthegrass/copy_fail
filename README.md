@@ -9,7 +9,7 @@ without triggering copy-on-write, then exec it to gain root.
 ## Minimum requirements
 
 | Requirement | Detail |
-|---|---|
+| --- | --- |
 | macOS | 12.2 (Monterey) or later |
 | CPU | Apple Silicon (M1+) or Intel with VT-x |
 | RAM | 4 GB free (VM takes 2 GB) |
@@ -50,7 +50,7 @@ limactl shell copyfail sudo bash /usr/local/bin/verify.sh
 
 Expected output from `verify.sh`:
 
-```
+```text
 [INFO] Running kernel: 6.1.0-43-cloud-amd64
 [PASS] Vulnerable kernel confirmed: 6.1.0-43-cloud-amd64
 [PASS] algif_aead is available (AF_ALG bind succeeded)
@@ -170,7 +170,7 @@ sudo bash /usr/local/bin/verify.sh
 ## Files
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `copy_fail.yml` | Lima VM definition |
 | `provision.sh` | Installs vulnerable kernel, configures GRUB, reboots |
 | `verify.sh` | Confirms kernel, runs exploit, checks result, restores su |
@@ -181,13 +181,13 @@ sudo bash /usr/local/bin/verify.sh
 ## URLs
 
 | Resource | URL |
-|---|---|
-| CVE detail (NVD) | https://nvd.nist.gov/vuln/detail/CVE-2026-31431 |
-| copy.fail writeup | https://copy.fail |
-| oss-security disclosure | https://www.openwall.com/lists/oss-security/2026/04/28/1 |
-| Debian DSA-6243-1 | https://www.debian.org/security/2026/dsa-6243 |
-| Vulnerable commit | https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=72548b093ee3 |
-| Fix commit | https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=linux-6.1.y |
-| Debian snapshot archive | https://snapshot.debian.org/archive/debian/ |
-| Lima docs | https://lima-vm.io/docs/ |
-| lima-additional-guestagents | https://github.com/lima-vm/lima-additional-guestagents |
+| --- | --- |
+| CVE detail (NVD) | <https://nvd.nist.gov/vuln/detail/CVE-2026-31431> |
+| copy.fail writeup | <https://copy.fail> |
+| oss-security disclosure | <https://www.openwall.com/lists/oss-security/2026/04/28/1> |
+| Debian DSA-6243-1 | <https://www.debian.org/security/2026/dsa-6243> |
+| Vulnerable commit | <https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=72548b093ee3> |
+| Fix commit | <https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/commit/?h=linux-6.1.y> |
+| Debian snapshot archive | <https://snapshot.debian.org/archive/debian/> |
+| Lima docs | <https://lima-vm.io/docs/> |
+| lima-additional-guestagents | <https://github.com/lima-vm/lima-additional-guestagents> |

@@ -19,6 +19,12 @@ ruff format --check --diff .
 
 # Lint (fix-only mode is set in ruff.toml)
 ruff check .
+
+# Fix markdown errors
+markdownlint -f -c .markdownlint.jsonc .
+
+# Check markdown without fixing
+markdownlint -c .markdownlint.jsonc .
 ```
 
 ### Running the Exploit
@@ -45,7 +51,7 @@ limactl stop copyfail && limactl delete copyfail
 ### Files
 
 | File | Role |
-|---|---|
+| --- | --- |
 | `copy_fail.py` | Python PoC — opens AF_ALG socket, mmaps target SUID binary, uses `splice()` to trigger in-place page cache write |
 | `provision.sh` | Pins apt to `snapshot.debian.org`, installs `linux-image-6.1.0-43-cloud-amd64` (6.1.162-1), configures GRUB, reboots |
 | `verify.sh` | Checks kernel version, confirms `algif_aead` loadability, runs exploit as `nobody`, checks ELF magic change, restores `su` |
@@ -92,7 +98,7 @@ s.close()
 
 Expected output when mitigated (patched kernel or modprobe rule active):
 
-```
+```text
 6.8.0-111-generic
 algif_aead: blocked — [Errno 2] No such file or directory
 ```
@@ -118,7 +124,7 @@ s.close()
 ### Interpreting results
 
 | Output | Meaning |
-|---|---|
+| --- | --- |
 | `blocked — [Errno 2] No such file or directory` | Mitigated — patched kernel or `install algif_aead /bin/false` active |
 | `blocked — [Errno 1] Operation not permitted` | Module present but load blocked by modprobe rule |
 | `bind succeeded` | **Vulnerable** — apply workaround or reboot into patched kernel |
