@@ -1,12 +1,12 @@
-# copyfail.yaml
 # Lima VM for reproducing CVE-2026-31431 (copy.fail)
 # Boots Debian 12 bookworm, downgrades to the vulnerable kernel (6.1.162-1),
 # then runs the exploit non-interactively.
 #
-# Usage:
-#   limactl start --name=copyfail copyfail.yaml
-#   limactl shell copyfail sudo bash /tmp/lima/provision.sh
-#   limactl shell copyfail sudo bash /tmp/lima/verify.sh
+# Usage (run from the repo directory):
+#   limactl start --name=copyfail --mount-none ./copyfail.yml
+#   limactl shell --sync . copyfail sudo bash provision.sh
+#   limactl shell --sync . copyfail sudo bash verify.sh
+
 ---
 images:
   # Pinned build — kernel 6.1.0-43-cloud-amd64 (6.1.162-1), vulnerable to CVE-2026-31431
@@ -16,17 +16,9 @@ images:
   - location: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
     arch: "x86_64"
 
-mounts:
-  - location: "~"
-  - location: "/tmp/lima"
-    writable: true
-
 cpus: 2
 memory: 2GiB
 disk: 20GiB
-
-# virtiofs requires macOS 12.2+ and Apple Silicon or Intel Mac with VT-x
-mountType: virtiofs
 
 vmType: vz
 rosetta:
@@ -45,30 +37,19 @@ containerd:
   system: false
   user: false
 
-provision:
-  - mode: system
-    script: |
-      #!/bin/bash
-      set -eux -o pipefail
-      # Copy scripts from the host-mounted /tmp/lima into the VM
-      cp /tmp/lima/provision.sh /usr/local/bin/provision.sh
-      cp /tmp/lima/verify.sh /usr/local/bin/verify.sh
-      cp /tmp/lima/copyfail.py /usr/local/bin/copyfail.py
-      chmod +x /usr/local/bin/provision.sh /usr/local/bin/verify.sh
-
 probes:
   - script: |
       #!/bin/bash
       set -eux -o pipefail
       uname -r
-    hint: "VM booted. Run: limactl shell copyfail sudo bash /usr/local/bin/provision.sh"
+    hint: "VM booted. Run: limactl shell --sync . copyfail sudo bash provision.sh"
 
 message: |
-  VM is up. Next steps:
+  VM is up. Next steps (run from the repo directory):
   ------
   # 1. Run provision (downgrades kernel, reboots into vulnerable version)
-  limactl shell copyfail sudo bash /usr/local/bin/provision.sh
+  limactl shell --sync . copyfail sudo bash provision.sh
 
   # 2. After reboot, verify kernel and detonate exploit
-  limactl shell copyfail sudo bash /usr/local/bin/verify.sh
+  limactl shell --sync . copyfail sudo bash verify.sh
   ------
