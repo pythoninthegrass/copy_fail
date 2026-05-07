@@ -127,7 +127,7 @@ s.close()
 | --- | --- |
 | `blocked — [Errno 2] No such file or directory` | Mitigated — patched kernel or `install algif_aead /bin/false` active |
 | `blocked — [Errno 1] Operation not permitted` | Module present but load blocked by modprobe rule |
-| `bind succeeded` | **Vulnerable** — apply workaround or reboot into patched kernel |
+| `bind succeeded` | Check kernel version — vulnerable if `< 6.1.170`; safe if on patched kernel with workaround intentionally removed |
 
 ## Context7
 
